@@ -1,0 +1,43 @@
+name: AI Issue Generator
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  create-issue:
+    # Запускаем только для комментариев к PR
+    if: github.event.issue.pull_request != null && contains(github.event.comment.body, '@aiissue')
+    runs-on: ubuntu-latest
+    
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Run AI Issue Generator
+        uses: ./
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Comment on PR
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = '${{ steps.ai-issue.outputs.issue_number }}';
+            const issueUrl = '${{ steps.ai-issue.outputs.issue_url }}';
+            
+            if (issueNumber && issueUrl) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `✅ Issue #${issueNumber} has been created: ${issueUrl}`
+              });
+            }
