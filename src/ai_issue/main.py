@@ -1,7 +1,5 @@
 #!/usr/bin/env python
-"""
-Главный модуль для запуска AI Issue Generator из GitHub Actions.
-"""
+"""Главный модуль для запуска AI Issue Generator из GitHub Actions."""
 
 import json
 import logging
@@ -20,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def parse_github_event() -> tuple[str, int, str]:
-    """
-    Парсить событие GitHub из переменных окружения.
+    """Парсить событие GitHub из переменных окружения.
 
     :return: Кортеж (repository, pr_number, comment_body)
     :raises ValueError: Если событие не является комментарием к PR
@@ -50,8 +47,7 @@ def parse_github_event() -> tuple[str, int, str]:
 
 
 def set_github_output(name: str, value: str) -> None:
-    """
-    Установить output для GitHub Actions.
+    """Установить output для GitHub Actions.
 
     :param name: Имя переменной
     :param value: Значение переменной
@@ -64,7 +60,7 @@ def set_github_output(name: str, value: str) -> None:
             f.write(f"{name}={value}\n")
     else:
         # Старый способ (deprecated, но оставляем для совместимости)
-        print(f"::set-output name={name}::{value}")
+        print(f"::set-output name={name}::{value}")  # noqa: T201
 
 
 def main() -> None:

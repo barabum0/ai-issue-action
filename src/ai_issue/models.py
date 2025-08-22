@@ -1,13 +1,10 @@
-"""
-Модели данных для работы с GitHub и OpenAI API.
-"""
+"""Модели данных для работы с GitHub и OpenAI API."""
 
 from pydantic import BaseModel, Field
 
 
 class IssueContent(BaseModel):
-    """
-    Модель для структурированного вывода OpenAI.
+    """Модель для структурированного вывода OpenAI.
 
     Представляет содержимое issue, которое будет создано в GitHub.
     """
@@ -15,12 +12,11 @@ class IssueContent(BaseModel):
     title: str = Field(description="Заголовок issue")
     body: str = Field(description="Описание issue в markdown формате")
     labels: list[str] = Field(description="Список меток для issue", default_factory=list)
-    issue_type: str | None = Field(description="Тип issue (bug, feature, enhancement, documentation)", default=None)
+    issue_type: str | None = Field(description="Тип issue (выбрать один из доступных)", default=None)
 
 
 class PRInfo(BaseModel):
-    """
-    Информация о Pull Request.
+    """Информация о Pull Request.
 
     Содержит основные данные о PR для анализа.
     """
