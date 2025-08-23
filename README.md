@@ -1,6 +1,6 @@
 # AI Issue Generator
 
-[![ru](https://img.shields.io/badge/lang-ru-blue.svg)](README-RU.md)
+[![На русском](https://img.shields.io/badge/На_русском-blue.svg)](README-RU.md)
 
 Automatically create GitHub issues from Pull Requests using AI-powered analysis.
 
@@ -8,7 +8,7 @@ Automatically create GitHub issues from Pull Requests using AI-powered analysis.
 
 - **Automatic Issue Creation**: Creates issues when `@aiissue` is mentioned in PR comments
 - **AI-Powered Analysis**: Uses OpenAI GPT to intelligently analyze PR content and generate meaningful issue descriptions
-- **Smart Labeling**: Automatically assigns appropriate labels based on available repository labels
+- **Smart Labeling**: Automatically assigns appropriate labels and issue type based on available repository labels
 - **Assignee Management**: Preserves PR assignees when creating the issue
 - **PR Linking**: Automatically links the created issue to the PR with `Closes #XX`
 - **Docker Support**: Containerized action for consistent execution

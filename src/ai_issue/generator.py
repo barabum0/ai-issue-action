@@ -8,22 +8,13 @@ from openai import OpenAI
 from .models import IssueContent, PRInfo
 
 logger = logging.getLogger(__name__)
+NEXT_LINE = "\n"
 
 
 class AIIssueGenerator:
-    """Класс для генерации и создания GitHub Issue на основе PR.
+    """Класс для генерации и создания GitHub Issue на основе PR."""
 
-    Использует OpenAI API для интеллектуального анализа PR и генерации
-    соответствующего issue с правильными метками и описанием.
-    """
-
-    def __init__(
-        self,
-        github_token: str,
-        openai_api_key: str,
-        repository: str,
-        pr_number: int,
-    ) -> None:
+    def __init__(self, github_token: str, openai_api_key: str, repository: str, pr_number: int):
         """Инициализация генератора issue.
 
         :param github_token: Токен для доступа к GitHub API
@@ -38,50 +29,21 @@ class AIIssueGenerator:
         self.repo = self.github.get_repo(repository)
         self.pr = self.repo.get_pull(pr_number)
 
-    def get_available_labels(self) -> list[str]:
+    def get_available_labels(self) -> list[tuple[str, str]]:
         """Получить список доступных меток в репозитории.
 
-        :return: Список названий меток
+        :return: Список названий и описаний меток
         """
         labels = self.repo.get_labels()
-        return [label.name for label in labels]
+        return [(label.name, label.description) for label in labels]
 
-    def get_issue_types(self) -> list[str]:
-        """Получить список типов issue из меток репозитория.
+    def get_available_issue_types(self) -> list[tuple[str, str]]:
+        """Получить список доступных типов Issue.
 
-        Ищет метки, которые могут быть типами issue (bug, feature, enhancement, documentation и т.д.).
-
-        :return: Список типов issue
+        :return: Список названий и описаний типов
         """
-        # Стандартные типы issue, которые часто используются
-        common_types = {
-            "bug", "feature", "enhancement", "documentation", "question",
-            "help wanted", "wontfix", "duplicate", "invalid", "task",
-            "improvement", "refactor", "test", "chore", "breaking change",
-            "security", "performance", "dependencies", "ci", "build"
-        }
-
-        # Получаем все метки
-        all_labels = self.get_available_labels()
-
-        # Фильтруем метки, которые являются типами issue
-        issue_types = []
-        for label in all_labels:
-            label_lower = label.lower()
-            # Проверяем, является ли метка типом issue
-            if label_lower in common_types or "type:" in label_lower or "kind/" in label_lower:
-                issue_types.append(label)
-
-        # Если не нашли специфичных типов, пытаемся найти общие
-        if not issue_types:
-            for label in all_labels:
-                label_lower = label.lower()
-                for common_type in common_types:
-                    if common_type in label_lower:
-                        issue_types.append(label)
-                        break
-
-        return issue_types
+        _, data = self.github.__requester.requestJsonAndCheck("GET", f"/orgs/{self.repo.organization.name}/issue-types")
+        return [(t.get("name"), t.get("description")) for t in data]
 
     def get_pr_info(self) -> PRInfo:
         """Получить информацию о Pull Request.
@@ -102,8 +64,8 @@ class AIIssueGenerator:
     def generate_issue_content(
         self,
         pr_info: PRInfo,
-        available_labels: list[str],
-        available_types: list[str],
+        available_labels: list[tuple[str, str]],
+        available_types: list[tuple[str, str]],
     ) -> IssueContent:
         """Генерировать содержимое issue с помощью OpenAI.
 
@@ -123,74 +85,48 @@ class AIIssueGenerator:
         - Добавлено строк: {pr_info.additions}
         - Удалено строк: {pr_info.deletions}
 
-        Доступные метки в репозитории: {", ".join(available_labels) if available_labels else "нет доступных меток"}
-        Доступные типы issue: {", ".join(available_types) if available_types else "стандартные: bug, feature, enhancement, documentation"}
+        Доступные метки issue в репозитории:
+        {NEXT_LINE.join(f"- {title}{NEXT_LINE}Описание метки: {desc}" for title, desc in available_labels)}
+
+        Доступные типы issue в репозитории:
+        {NEXT_LINE.join(f"- {title}{NEXT_LINE}Описание типа: {desc}" for title, desc in available_types)}
 
         Создай:
         1. Краткий и информативный заголовок для issue
         2. Подробное описание проблемы или задачи, которую решает этот PR
-        3. Выбери подходящие метки из списка доступных (только те, что есть в списке!)
-        4. Выбери ОДИН наиболее подходящий тип issue из доступных
+        3. Выбери подходящие метки из списка доступных
+        4. Выбери подходящий тип issue из списка доступных
 
         Описание должно быть структурированным и включать:
         - Контекст проблемы
-        - Что было сделано для решения
         - Почему это важно
-
-        Формат описания: Markdown
         """
 
         try:
-            response = self.openai.beta.chat.completions.parse(
-                model="gpt-4o-2024-08-06",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Ты - опытный разработчик, создающий четкие и информативные GitHub issue.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format=IssueContent,
+            response = self.openai.responses.parse(
+                model="gpt-5",
+                instructions="Ты - опытный разработчик, создающий четкие и информативные GitHub issue.",
+                input=prompt,
+                text_format=IssueContent,
                 temperature=0.7,
             )
-
-            parsed_response = response.choices[0].message.parsed
-            if parsed_response is None:
-                raise ValueError("OpenAI вернул пустой ответ")
-
-            # Фильтруем метки, оставляя только доступные
-            if available_labels:
-                parsed_response.labels = [label for label in parsed_response.labels if label in available_labels]
-
-            # Фильтруем тип issue, оставляя только доступный
-            if available_types and parsed_response.issue_type and parsed_response.issue_type not in available_types:
-                # Если выбранный тип не в списке доступных, пытаемся найти похожий
-                parsed_response.issue_type = available_types[0] if available_types else None
-
-            return parsed_response
-
+            assert response.output_parsed is not None
+            return response.output_parsed
         except Exception as e:
             logger.error(f"Ошибка при генерации содержимого issue: {e}")
             raise
 
-    def create_issue(
-        self,
-        issue_content: IssueContent,
-        assignees: list[str],
-    ) -> int:
+    def create_issue(self, issue_content: IssueContent, assignees: list[str]) -> int:
         """Создать issue в GitHub.
 
         :param issue_content: Содержимое issue
         :param assignees: Список пользователей для назначения
-        :return: Номер созданного issue
+        :return: ID созданного issue
         """
         try:
             # Создаем issue
             issue = self.repo.create_issue(
-                title=issue_content.title,
-                body=issue_content.body,
-                labels=issue_content.labels or [],
-                assignees=assignees or [],
+                title=issue_content.title, body=issue_content.body, labels=issue_content.labels, assignees=assignees
             )
 
             logger.info(f"Issue #{issue.number} успешно создан")
@@ -207,37 +143,30 @@ class AIIssueGenerator:
         """
         try:
             current_body = self.pr.body or ""
+            new_body = f"{current_body}\n\nCloses #{issue_number}"
 
-            # Проверяем, не добавлена ли уже ссылка
-            if f"#{issue_number}" not in current_body:
-                new_body = f"{current_body}\n\nCloses #{issue_number}"
-                self.pr.edit(body=new_body)
-                logger.info(f"Описание PR обновлено ссылкой на issue #{issue_number}")
-            else:
-                logger.info(f"Ссылка на issue #{issue_number} уже присутствует в описании PR")
+            self.pr.edit(body=new_body)
+            logger.info(f"Описание PR обновлено ссылкой на issue #{issue_number}")
 
         except Exception as e:
             logger.error(f"Ошибка при обновлении описания PR: {e}")
             raise
 
     def process(self) -> int:
-        """Основной процесс создания issue на основе PR.
-
-        :return: Номер созданного issue
-        """
+        """Основной процесс создания issue на основе PR."""
         try:
             logger.info(f"Начинаем обработку PR #{self.pr_number} в репозитории {self.repository}")
 
             # Получаем информацию
             pr_info = self.get_pr_info()
             available_labels = self.get_available_labels()
-            available_types = self.get_issue_types()
+            available_types = self.get_available_issue_types()
 
             logger.info("Генерируем содержимое issue с помощью OpenAI...")
             issue_content = self.generate_issue_content(pr_info, available_labels, available_types)
 
             logger.info("Создаем issue в GitHub...")
-            issue_number = self.create_issue(issue_content, pr_info.assignees)
+            issue_number = self.create_issue(issue_content, pr_info["assignees"])
 
             logger.info("Обновляем описание PR...")
             self.update_pr_description(issue_number)
