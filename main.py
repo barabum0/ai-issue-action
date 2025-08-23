@@ -16,11 +16,10 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+NEXT_LINE = "\n"
 
 
 class IssueContent(BaseModel):
@@ -35,15 +34,9 @@ class IssueContent(BaseModel):
 class AIIssueGenerator:
     """Класс для генерации и создания GitHub Issue на основе PR."""
 
-    def __init__(
-        self,
-        github_token: str,
-        openai_api_key: str,
-        repository: str,
-        pr_number: int
-    ):
+    def __init__(self, github_token: str, openai_api_key: str, repository: str, pr_number: int):
         """Инициализация генератора issue.
-        
+
         :param github_token: Токен для доступа к GitHub API
         :param openai_api_key: API ключ OpenAI
         :param repository: Полное имя репозитория (owner/repo)
@@ -56,17 +49,25 @@ class AIIssueGenerator:
         self.repo = self.github.get_repo(repository)
         self.pr = self.repo.get_pull(pr_number)
 
-    def get_available_labels(self) -> list[str]:
+    def get_available_labels(self) -> list[tuple[str, str]]:
         """Получить список доступных меток в репозитории.
-        
-        :return: Список названий меток
+
+        :return: Список названий и описаний меток
         """
         labels = self.repo.get_labels()
-        return [label.name for label in labels]
+        return [(label.name, label.description) for label in labels]
+
+    def get_available_issue_types(self) -> list[tuple[str, str]]:
+        """Получить список доступных типов Issue.
+
+        :return: Список названий и описаний типов
+        """
+        _, data = self.github.__requester.requestJsonAndCheck("GET", f"/orgs/{self.repo.organization.name}/issue-types")
+        return [(t.get("name"), t.get("description")) for t in data]
 
     def get_pr_info(self) -> dict[str, Any]:
         """Получить информацию о Pull Request.
-        
+
         :return: Словарь с информацией о PR
         """
         return {
@@ -77,38 +78,47 @@ class AIIssueGenerator:
             "created_at": self.pr.created_at.isoformat(),
             "files_changed": self.pr.changed_files,
             "additions": self.pr.additions,
-            "deletions": self.pr.deletions
+            "deletions": self.pr.deletions,
         }
 
-    def generate_issue_content(self, pr_info: dict[str, Any], available_labels: list[str]) -> IssueContent:
+    def generate_issue_content(
+        self,
+        pr_info: dict[str, Any],
+        available_labels: list[tuple[str, str]],
+        available_types: list[tuple[str, str]],
+    ) -> IssueContent:
         """Генерировать содержимое issue с помощью OpenAI.
-        
+
         :param pr_info: Информация о PR
         :param available_labels: Доступные метки
+        :param available_types: Доступные типы issue
         :return: Объект IssueContent с сгенерированным содержимым
         """
         prompt = f"""
         На основе следующего Pull Request создай описание issue, которое должно быть решено этим PR.
         
         Информация о Pull Request:
-        - Заголовок: {pr_info['title']}
-        - Описание: {pr_info['body']}
-        - Автор: {pr_info['author']}
-        - Изменено файлов: {pr_info['files_changed']}
-        - Добавлено строк: {pr_info['additions']}
-        - Удалено строк: {pr_info['deletions']}
+        - Заголовок: {pr_info["title"]}
+        - Описание: {pr_info["body"]}
+        - Автор: {pr_info["author"]}
+        - Изменено файлов: {pr_info["files_changed"]}
+        - Добавлено строк: {pr_info["additions"]}
+        - Удалено строк: {pr_info["deletions"]}
         
-        Доступные метки в репозитории: {', '.join(available_labels)}
+        Доступные метки issue в репозитории:
+        {NEXT_LINE.join(f"- {title}{NEXT_LINE}Описание метки: {desc}" for title, desc in available_labels)}
+        
+        Доступные типы issue в репозитории:
+        {NEXT_LINE.join(f"- {title}{NEXT_LINE}Описание типа: {desc}" for title, desc in available_labels)}
         
         Создай:
         1. Краткий и информативный заголовок для issue
         2. Подробное описание проблемы или задачи, которую решает этот PR
         3. Выбери подходящие метки из списка доступных
-        4. Определи тип issue (например: bug, feature, enhancement, documentation)
+        4. Выбери подходящий тип issue из списка доступных
         
         Описание должно быть структурированным и включать:
         - Контекст проблемы
-        - Что было сделано для решения
         - Почему это важно
         """
 
@@ -118,7 +128,7 @@ class AIIssueGenerator:
                 instructions="Ты - опытный разработчик, создающий четкие и информативные GitHub issue.",
                 input=prompt,
                 text_format=IssueContent,
-                temperature=0.7
+                temperature=0.7,
             )
             assert response.output_parsed is not None
             return response.output_parsed
@@ -128,7 +138,7 @@ class AIIssueGenerator:
 
     def create_issue(self, issue_content: IssueContent, assignees: list[str]) -> int:
         """Создать issue в GitHub.
-        
+
         :param issue_content: Содержимое issue
         :param assignees: Список пользователей для назначения
         :return: ID созданного issue
@@ -136,10 +146,7 @@ class AIIssueGenerator:
         try:
             # Создаем issue
             issue = self.repo.create_issue(
-                title=issue_content.title,
-                body=issue_content.body,
-                labels=issue_content.labels,
-                assignees=assignees
+                title=issue_content.title, body=issue_content.body, labels=issue_content.labels, assignees=assignees
             )
 
             logger.info(f"Issue #{issue.number} успешно создан")
@@ -151,7 +158,7 @@ class AIIssueGenerator:
 
     def update_pr_description(self, issue_number: int):
         """Обновить описание PR, добавив ссылку на созданное issue.
-        
+
         :param issue_number: Номер созданного issue
         """
         try:
@@ -173,9 +180,10 @@ class AIIssueGenerator:
             # Получаем информацию
             pr_info = self.get_pr_info()
             available_labels = self.get_available_labels()
+            available_types = self.get_available_issue_types()
 
             logger.info("Генерируем содержимое issue с помощью OpenAI...")
-            issue_content = self.generate_issue_content(pr_info, available_labels)
+            issue_content = self.generate_issue_content(pr_info, available_labels, available_types)
 
             logger.info("Создаем issue в GitHub...")
             issue_number = self.create_issue(issue_content, pr_info["assignees"])
@@ -194,7 +202,7 @@ class AIIssueGenerator:
 
 def parse_github_event() -> tuple[str, int, str]:
     """Парсить событие GitHub из переменных окружения.
-    
+
     :return: Кортеж (repository, pr_number, comment_body)
     """
     event_path = os.environ.get("GITHUB_EVENT_PATH")
@@ -236,10 +244,7 @@ def main():
 
         # Создаем генератор и запускаем процесс
         generator = AIIssueGenerator(
-            github_token=github_token,
-            openai_api_key=openai_api_key,
-            repository=repository,
-            pr_number=pr_number
+            github_token=github_token, openai_api_key=openai_api_key, repository=repository, pr_number=pr_number
         )
 
         issue_number = generator.process()
