@@ -60,7 +60,7 @@ def set_github_output(name: str, value: str) -> None:
             f.write(f"{name}={value}\n")
     else:
         # Старый способ (deprecated, но оставляем для совместимости)
-        print(f"::set-output name={name}::{value}")  # noqa: T201
+        print(f"::set-output name={name}::{value}")
 
 
 def main() -> None:

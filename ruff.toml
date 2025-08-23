@@ -59,6 +59,7 @@ ignore = [
     "PLR0913", # Too many arguments to function call
     "PLR2004", # Magic value used in comparison
     "S106",    # Possible hardcoded password assigned to argument
+    "T201",     # 'print' found
 ]
 
 [lint.per-file-ignores]
