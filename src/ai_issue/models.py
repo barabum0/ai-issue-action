@@ -1,6 +1,7 @@
 """Модели данных для работы с GitHub и OpenAI API."""
 
 from pydantic import BaseModel, Field
+from github.NamedUser import NamedUser
 
 
 class IssueContent(BaseModel):
@@ -23,7 +24,7 @@ class PRInfo(BaseModel):
 
     title: str = Field(description="Заголовок PR")
     body: str = Field(description="Описание PR", default="")
-    assignees: list[str] = Field(description="Список назначенных пользователей", default_factory=list)
+    assignees: list[NamedUser] = Field(description="Список назначенных пользователей", default_factory=list)
     author: str = Field(description="Автор PR")
     created_at: str = Field(description="Дата создания PR")
     files_changed: int = Field(description="Количество измененных файлов")

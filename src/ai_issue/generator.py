@@ -3,6 +3,8 @@
 import logging
 
 from github import Github
+from github.Issue import Issue
+from github.NamedUser import NamedUser
 from openai import OpenAI
 
 from .models import IssueContent, PRInfo
@@ -42,7 +44,7 @@ class AIIssueGenerator:
 
         :return: Список названий и описаний типов
         """
-        _, data = self.github.__requester.requestJsonAndCheck("GET", f"/orgs/{self.repo.organization.name}/issue-types")
+        _, data = self.github.requester.requestJsonAndCheck("GET", f"/orgs/{self.repo.organization.login}/issue-types")
         return [(t.get("name"), t.get("description")) for t in data]
 
     def get_pr_info(self) -> PRInfo:
@@ -53,7 +55,7 @@ class AIIssueGenerator:
         return PRInfo(
             title=self.pr.title,
             body=self.pr.body or "",
-            assignees=[assignee.login for assignee in self.pr.assignees],
+            assignees=self.pr.assignees,
             author=self.pr.user.login,
             created_at=self.pr.created_at.isoformat(),
             files_changed=self.pr.changed_files,
@@ -116,7 +118,7 @@ class AIIssueGenerator:
             logger.error(f"Ошибка при генерации содержимого issue: {e}")
             raise
 
-    def create_issue(self, issue_content: IssueContent, assignees: list[str]) -> int:
+    def create_issue(self, issue_content: IssueContent, assignees: list[NamedUser]) -> int:
         """Создать issue в GitHub.
 
         :param issue_content: Содержимое issue
@@ -125,9 +127,18 @@ class AIIssueGenerator:
         """
         try:
             # Создаем issue
-            issue = self.repo.create_issue(
-                title=issue_content.title, body=issue_content.body, labels=issue_content.labels, assignees=assignees
+            headers, data = self.github.requester.requestJsonAndCheck(
+                "POST",
+                f"{self.repo.url}/issues",
+                input={
+                    "title": issue_content.title,
+                    "body": issue_content.body,
+                    "labels": issue_content.labels,
+                    "type": issue_content.issue_type,
+                    "assignees": [element.login for element in assignees],
+                },
             )
+            issue = Issue(self.github.requester, headers, data, completed=True)
 
             logger.info(f"Issue #{issue.number} успешно создан")
             return issue.number
@@ -166,7 +177,7 @@ class AIIssueGenerator:
             issue_content = self.generate_issue_content(pr_info, available_labels, available_types)
 
             logger.info("Создаем issue в GitHub...")
-            issue_number = self.create_issue(issue_content, pr_info["assignees"])
+            issue_number = self.create_issue(issue_content, pr_info.assignees)
 
             logger.info("Обновляем описание PR...")
             self.update_pr_description(issue_number)
