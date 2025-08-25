@@ -1,7 +1,7 @@
 """Модели данных для работы с GitHub и OpenAI API."""
 
-from pydantic import BaseModel, Field, ConfigDict
 from github.NamedUser import NamedUser
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class IssueContent(BaseModel):
@@ -21,6 +21,7 @@ class PRInfo(BaseModel):
 
     Содержит основные данные о PR для анализа.
     """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     title: str = Field(description="Заголовок PR")
